@@ -40,8 +40,8 @@ type bitset uint64
 // first control byte in the group that has the MSB set.
 //
 // Returns abi.SwissMapGroupSlots if the bitset is empty.
-func (b bitset) first() uint32 {
-	return uint32(sys.TrailingZeros64(uint64(b))) >> 3
+func (b bitset) first() uintptr {
+	return uintptr(sys.TrailingZeros64(uint64(b))) >> 3
 }
 
 // removeFirst removes the first set bit (that is, resets the least significant set bit to 0).
@@ -64,7 +64,7 @@ type ctrl uint8
 type ctrlGroup uint64
 
 // get returns the i-th control byte.
-func (g *ctrlGroup) get(i uint32) ctrl {
+func (g *ctrlGroup) get(i uintptr) ctrl {
 	if goarch.BigEndian {
 		return *(*ctrl)(unsafe.Add(unsafe.Pointer(g), 7-i))
 	}
@@ -72,7 +72,7 @@ func (g *ctrlGroup) get(i uint32) ctrl {
 }
 
 // set sets the i-th control byte.
-func (g *ctrlGroup) set(i uint32, c ctrl) {
+func (g *ctrlGroup) set(i uintptr, c ctrl) {
 	if goarch.BigEndian {
 		*(*ctrl)(unsafe.Add(unsafe.Pointer(g), 7-i)) = c
 		return
@@ -119,36 +119,9 @@ func (g ctrlGroup) matchEmptyOrDeleted() bitset {
 	// A deleted slot is 1111 1110
 	// A full slot is    0??? ????
 	//
-	// A slot is empty or deleted iff bit 7 is set and bit 0 is not.
+	// A slot is empty or deleted iff bit 7 is set.
 	v := uint64(g)
-	return bitset((v &^ (v << 7)) & bitsetMSB)
-}
-
-// convertNonFullToEmptyAndFullToDeleted converts deleted control bytes in a
-// group to empty control bytes, and control bytes indicating full slots to
-// deleted control bytes.
-func (g *ctrlGroup) convertNonFullToEmptyAndFullToDeleted() {
-	// An empty slot is     1000 0000
-	// A deleted slot is    1111 1110
-	// A full slot is       0??? ????
-	//
-	// We select the MSB, invert, add 1 if the MSB was set and zero out the low
-	// bit.
-	//
-	//  - if the MSB was set (i.e. slot was empty, or deleted):
-	//     v:             1000 0000
-	//     ^v:            0111 1111
-	//     ^v + (v >> 7): 1000 0000
-	//     &^ bitsetLSB:  1000 0000 = empty slot.
-	//
-	// - if the MSB was not set (i.e. full slot):
-	//     v:             0000 0000
-	//     ^v:            1111 1111
-	//     ^v + (v >> 7): 1111 1111
-	//     &^ bitsetLSB:  1111 1110 = deleted slot.
-	//
-	v := uint64(*g) & bitsetMSB
-	*g = ctrlGroup((^v + (v >> 7)) &^ bitsetLSB)
+	return bitset(v & bitsetMSB)
 }
 
 // groupReference is a wrapper type representing a single slot group stored at
@@ -157,8 +130,6 @@ func (g *ctrlGroup) convertNonFullToEmptyAndFullToDeleted() {
 // A group holds abi.SwissMapGroupSlots slots (key/elem pairs) plus their
 // control word.
 type groupReference struct {
-	typ *abi.SwissMapType
-
 	// data points to the group, which is described by typ.Group and has
 	// layout:
 	//
@@ -204,15 +175,15 @@ func (g *groupReference) ctrls() *ctrlGroup {
 }
 
 // key returns a pointer to the key at index i.
-func (g *groupReference) key(i uint32) unsafe.Pointer {
-	offset := groupSlotsOffset + uintptr(i)*g.typ.SlotSize
+func (g *groupReference) key(typ *abi.SwissMapType, i uintptr) unsafe.Pointer {
+	offset := groupSlotsOffset + i*typ.SlotSize
 
 	return unsafe.Pointer(uintptr(g.data) + offset)
 }
 
 // elem returns a pointer to the element at index i.
-func (g *groupReference) elem(i uint32) unsafe.Pointer {
-	offset := groupSlotsOffset + uintptr(i)*g.typ.SlotSize + g.typ.ElemOff
+func (g *groupReference) elem(typ *abi.SwissMapType, i uintptr) unsafe.Pointer {
+	offset := groupSlotsOffset + i*typ.SlotSize + typ.ElemOff
 
 	return unsafe.Pointer(uintptr(g.data) + offset)
 }
@@ -220,8 +191,6 @@ func (g *groupReference) elem(i uint32) unsafe.Pointer {
 // groupsReference is a wrapper type describing an array of groups stored at
 // data.
 type groupsReference struct {
-	typ *abi.SwissMapType
-
 	// data points to an array of groups. See groupReference above for the
 	// definition of group.
 	data unsafe.Pointer // data *[length]typ.Group
@@ -230,6 +199,9 @@ type groupsReference struct {
 	// length must be a power of two). This allows computing i%length
 	// quickly using bitwise AND.
 	lengthMask uint64
+
+	// entryMask is the total number of slots in the groups minus one.
+	entryMask uint64
 }
 
 // newGroups allocates a new array of length groups.
@@ -237,21 +209,20 @@ type groupsReference struct {
 // Length must be a power of two.
 func newGroups(typ *abi.SwissMapType, length uint64) groupsReference {
 	return groupsReference{
-		typ: typ,
 		// TODO: make the length type the same throughout.
 		data:       newarray(typ.Group, int(length)),
 		lengthMask: length - 1,
+		entryMask:  (length * abi.SwissMapGroupSlots) - 1,
 	}
 }
 
 // group returns the group at index i.
-func (g *groupsReference) group(i uint64) groupReference {
+func (g *groupsReference) group(typ *abi.SwissMapType, i uint64) groupReference {
 	// TODO(prattmic): Do something here about truncation on cast to
 	// uintptr on 32-bit systems?
-	offset := uintptr(i) * g.typ.Group.Size_
+	offset := uintptr(i) * typ.Group.Size_
 
 	return groupReference{
-		typ:  g.typ,
 		data: unsafe.Pointer(uintptr(g.data) + offset),
 	}
 }

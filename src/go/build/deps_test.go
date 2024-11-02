@@ -83,17 +83,17 @@ var depsRules = `
 	< internal/stringslite
 	< internal/itoa
 	< internal/unsafeheader
+	< internal/race
+	< internal/msan
+	< internal/asan
 	< internal/runtime/sys
 	< internal/runtime/syscall
 	< internal/runtime/atomic
 	< internal/runtime/exithook
-	< internal/runtime/maps
 	< internal/runtime/math
+	< internal/runtime/maps
 	< runtime
 	< sync/atomic
-	< internal/race
-	< internal/msan
-	< internal/asan
 	< internal/weak
 	< sync
 	< internal/bisect
@@ -102,7 +102,7 @@ var depsRules = `
 	< errors
 	< internal/oserror;
 
-	cmp, internal/race, math/bits
+	cmp, runtime, math/bits
 	< iter
 	< maps, slices;
 
@@ -453,6 +453,7 @@ var depsRules = `
 	< crypto/internal/fips/subtle
 	< crypto/internal/fips/sha256
 	< crypto/internal/fips/sha512
+	< crypto/internal/fips/sha3
 	< crypto/internal/fips/hmac
 	< FIPS;
 

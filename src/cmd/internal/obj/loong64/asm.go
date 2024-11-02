@@ -86,11 +86,14 @@ var optab = []Optab{
 	{AADDF, C_FREG, C_FREG, C_NONE, C_FREG, C_NONE, 2, 4, 0, 0},
 	{ACMPEQF, C_FREG, C_FREG, C_NONE, C_FCCREG, C_NONE, 2, 4, 0, 0},
 
-	{ACLO, C_REG, C_NONE, C_NONE, C_REG, C_NONE, 9, 4, 0, 0},
+	{ACLOW, C_REG, C_NONE, C_NONE, C_REG, C_NONE, 9, 4, 0, 0},
 	{AABSF, C_FREG, C_NONE, C_NONE, C_FREG, C_NONE, 9, 4, 0, 0},
 	{AMOVVF, C_FREG, C_NONE, C_NONE, C_FREG, C_NONE, 9, 4, 0, 0},
 	{AMOVF, C_FREG, C_NONE, C_NONE, C_FREG, C_NONE, 9, 4, 0, 0},
 	{AMOVD, C_FREG, C_NONE, C_NONE, C_FREG, C_NONE, 9, 4, 0, 0},
+
+	{AFMADDF, C_FREG, C_FREG, C_NONE, C_FREG, C_NONE, 39, 4, 0, 0},
+	{AFMADDF, C_FREG, C_FREG, C_FREG, C_FREG, C_NONE, 39, 4, 0, 0},
 
 	{AMOVW, C_REG, C_NONE, C_NONE, C_SAUTO, C_NONE, 7, 4, REGSP, 0},
 	{AMOVWU, C_REG, C_NONE, C_NONE, C_SAUTO, C_NONE, 7, 4, REGSP, 0},
@@ -1101,6 +1104,15 @@ func buildop(ctxt *obj.Link) {
 			opset(AFSCALEBF, r0)
 			opset(AFSCALEBD, r0)
 
+		case AFMADDF:
+			opset(AFMADDD, r0)
+			opset(AFMSUBF, r0)
+			opset(AFMSUBD, r0)
+			opset(AFNMADDF, r0)
+			opset(AFNMADDD, r0)
+			opset(AFNMSUBF, r0)
+			opset(AFNMSUBD, r0)
+
 		case AAND:
 			opset(AOR, r0)
 			opset(AXOR, r0)
@@ -1207,8 +1219,26 @@ func buildop(ctxt *obj.Link) {
 			opset(ARDTIMEHW, r0)
 			opset(ARDTIMED, r0)
 
-		case ACLO:
-			opset(ACLZ, r0)
+		case ACLOW:
+			opset(ACLZW, r0)
+			opset(ACTOW, r0)
+			opset(ACTZW, r0)
+			opset(ACLOV, r0)
+			opset(ACLZV, r0)
+			opset(ACTOV, r0)
+			opset(ACTZV, r0)
+			opset(AREVB2H, r0)
+			opset(AREVB4H, r0)
+			opset(AREVB2W, r0)
+			opset(AREVBV, r0)
+			opset(AREVH2W, r0)
+			opset(AREVHV, r0)
+			opset(ABITREV4B, r0)
+			opset(ABITREV8B, r0)
+			opset(ABITREVW, r0)
+			opset(ABITREVV, r0)
+			opset(AEXTWB, r0)
+			opset(AEXTWH, r0)
 			opset(ACPUCFG, r0)
 
 		case ATEQ:
@@ -1216,6 +1246,14 @@ func buildop(ctxt *obj.Link) {
 
 		case AMASKEQZ:
 			opset(AMASKNEZ, r0)
+			opset(ACRCWBW, r0)
+			opset(ACRCWHW, r0)
+			opset(ACRCWWW, r0)
+			opset(ACRCWVW, r0)
+			opset(ACRCCWBW, r0)
+			opset(ACRCCWHW, r0)
+			opset(ACRCCWWW, r0)
+			opset(ACRCCWVW, r0)
 
 		case ANOOP:
 			opset(obj.AUNDEF, r0)
@@ -1229,6 +1267,10 @@ func buildop(ctxt *obj.Link) {
 			}
 		}
 	}
+}
+
+func OP_RRRR(op uint32, r1 uint32, r2 uint32, r3 uint32, r4 uint32) uint32 {
+	return op | (r1&0x1F)<<15 | (r2&0x1F)<<10 | (r3&0x1F)<<5 | (r4 & 0x1F)
 }
 
 // r1 -> rk
@@ -1630,6 +1672,13 @@ func (c *ctxt0) asmout(p *obj.Prog, o *Optab, out []uint32) {
 		o2 = OP_RRR(c.oprrr(add), uint32(r), uint32(REGTMP), uint32(REGTMP))
 		o3 = OP_12IRR(c.opirr(-p.As), uint32(v), uint32(REGTMP), uint32(p.To.Reg))
 
+	case 39: // fmadd r1, r2, [r3], r4
+		r := int(p.To.Reg)
+		if len(p.RestArgs) > 0 {
+			r = int(p.GetFrom3().Reg)
+		}
+		o1 = OP_RRRR(c.oprrrr(p.As), uint32(p.From.Reg), uint32(p.Reg), uint32(r), uint32(p.To.Reg))
+
 	case 40: // word
 		o1 = uint32(c.regoff(&p.From))
 
@@ -1844,6 +1893,30 @@ func (c *ctxt0) regoff(a *obj.Addr) int32 {
 	return int32(c.vregoff(a))
 }
 
+func (c *ctxt0) oprrrr(a obj.As) uint32 {
+	switch a {
+	case AFMADDF:
+		return 0x81 << 20 // fmadd.s
+	case AFMADDD:
+		return 0x82 << 20 // fmadd.d
+	case AFMSUBF:
+		return 0x85 << 20 // fmsub.s
+	case AFMSUBD:
+		return 0x86 << 20 // fmsub.d
+	case AFNMADDF:
+		return 0x89 << 20 // fnmadd.f
+	case AFNMADDD:
+		return 0x8a << 20 // fnmadd.d
+	case AFNMSUBF:
+		return 0x8d << 20 // fnmsub.s
+	case AFNMSUBD:
+		return 0x8e << 20 // fnmsub.d
+	}
+
+	c.ctxt.Diag("bad rrrr opcode %v", a)
+	return 0
+}
+
 func (c *ctxt0) oprrr(a obj.As) uint32 {
 	switch a {
 	case AADD:
@@ -1931,7 +2004,22 @@ func (c *ctxt0) oprrr(a obj.As) uint32 {
 		return 0x45 << 15 // mod.d
 	case AREMVU:
 		return 0x47 << 15 // mod.du
-
+	case ACRCWBW:
+		return 0x48 << 15 // crc.w.b.w
+	case ACRCWHW:
+		return 0x49 << 15 // crc.w.h.w
+	case ACRCWWW:
+		return 0x4a << 15 // crc.w.w.w
+	case ACRCWVW:
+		return 0x4b << 15 // crc.w.d.w
+	case ACRCCWBW:
+		return 0x4c << 15 // crcc.w.b.w
+	case ACRCCWHW:
+		return 0x4d << 15 // crcc.w.h.w
+	case ACRCCWWW:
+		return 0x4e << 15 // crcc.w.w.w
+	case ACRCCWVW:
+		return 0x4f << 15 // crcc.w.d.w
 	case AJMP:
 		return 0x13 << 26 // jirl r0, rj, 0
 	case AJAL:
@@ -2023,10 +2111,46 @@ func (c *ctxt0) oprrr(a obj.As) uint32 {
 
 func (c *ctxt0) oprr(a obj.As) uint32 {
 	switch a {
-	case ACLO:
-		return 0x4 << 10
-	case ACLZ:
-		return 0x5 << 10
+	case ACLOW:
+		return 0x4 << 10 // clo.w
+	case ACLZW:
+		return 0x5 << 10 // clz.w
+	case ACTOW:
+		return 0x6 << 10 // cto.w
+	case ACTZW:
+		return 0x7 << 10 // ctz.w
+	case ACLOV:
+		return 0x8 << 10 // clo.d
+	case ACLZV:
+		return 0x9 << 10 // clz.d
+	case ACTOV:
+		return 0xa << 10 // cto.d
+	case ACTZV:
+		return 0xb << 10 // ctz.d
+	case AREVB2H:
+		return 0xc << 10 // revb.2h
+	case AREVB4H:
+		return 0xd << 10 // revb.4h
+	case AREVB2W:
+		return 0xe << 10 // revb.2w
+	case AREVBV:
+		return 0xf << 10 // revb.d
+	case AREVH2W:
+		return 0x10 << 10 // revh.2w
+	case AREVHV:
+		return 0x11 << 10 // revh.d
+	case ABITREV4B:
+		return 0x12 << 10 // bitrev.4b
+	case ABITREV8B:
+		return 0x13 << 10 // bitrev.8b
+	case ABITREVW:
+		return 0x14 << 10 // bitrev.w
+	case ABITREVV:
+		return 0x15 << 10 // bitrev.d
+	case AEXTWH:
+		return 0x16 << 10 // ext.w.h
+	case AEXTWB:
+		return 0x17 << 10 // ext.w.h
 	case ACPUCFG:
 		return 0x1b << 10
 	case ARDTIMELW:
